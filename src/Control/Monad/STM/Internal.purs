@@ -1,4 +1,17 @@
-module Control.Monad.STM.Internal where
+module Control.Monad.STM.Internal
+  ( STMEff
+  , AffSTM
+  , TVar
+  , STM
+  , atomically
+  , newTVar
+  , newTVarAff
+  , readTVar
+  , readTVarEff
+  , writeTVar
+  , writeTVarAff
+  , validateTVar
+  ) where
 
 import Prelude
 
@@ -16,26 +29,28 @@ import Control.Monad.State.Class as ST
 import Control.Monad.Trans.Class (lift)
 import Control.Plus (class Plus)
 
-import Data.List (List(Nil), (:))
-import Data.Foldable (for_, or)
-import Data.Traversable (traverse)
-import Data.Maybe (Maybe(..), maybe)
+import Data.List (List(Nil), (:), null, catMaybes)
+import Data.Foldable (for_, or, and, minimum)
+import Data.Traversable (traverse, for)
+import Data.Maybe (Maybe(..), maybe, fromJust)
 import Data.Map as M
 import Data.Newtype (wrap)
 import Data.Tuple (Tuple(..))
-import Data.Set as S
 import Unsafe.Coerce (unsafeCoerce)
+import Partial.Unsafe (unsafePartial)
 
 -- | effect rows
 type STMEff r = (avar :: AV.AVAR, ref :: Ref.REF | r)
 
--- | Base Aff monad use here
+-- | type synonym for Aff used by STM
 type AffSTM r = Aff (STMEff r)
 
 -- | unique value of TVar
 type TVarId = Int
 
 type Timestamp = Number
+
+type Set a = M.Map a Unit
 
 data TVar a = TVar TVarId (AV.AVar Unit) (Ref.Ref Timestamp) (Ref.Ref a) (Ref.Ref (List (AV.AVar Unit)))
 
@@ -49,7 +64,7 @@ data Result a
 type TRec =
   { curTime  :: Timestamp
   , topTime  :: (Maybe Timestamp)
-  , writeSet :: (S.Set ATVar)
+  , writeSet :: (Set ATVar)
   , curSet   :: (M.Map ATVar Timestamp)
   , cache    :: (M.Map ATVar Any)
   }
@@ -100,7 +115,7 @@ writeTVar tvar val = do
   _ <- readTVar tvar
   STM do
     _ <- modifyCache (M.insert (aTVar tvar) (mkAny val))
-    _ <- modifyWriteSet (S.insert (aTVar tvar))
+    _ <- modifyWriteSet (M.insert (aTVar tvar) unit)
     pure (Good unit)
 
 writeTVarAff :: forall e a. TVar a -> a -> AffSTM e Unit
@@ -126,7 +141,7 @@ validateTVar tvar@(TVar _ _ timeRef _ _) = STM do
               pure (Good unit)
             else pure Abort
 
-atomically :: forall a. STM a -> AffSTM e Unit
+atomically :: forall e a. STM a -> AffSTM e a
 atomically (STM act) = go
   where
   shouldAbort :: AV.AVar Unit -> TRec -> ATVar -> AffSTM e Boolean
@@ -134,29 +149,66 @@ atomically (STM act) = go
     withMVar lock \_ -> do
       time <- liftEff $ Ref.readRef timeRef
       if Just time == M.lookup atvar rec.curSet
-        then liftEff $ Re.modifyRef waitLocksRef (waitLock : _) $> false
+        then liftEff $ Ref.modifyRef waitLocksRef (waitLock : _) $> false
         else pure true
 
+  setTolList :: forall b. Set b -> List b
+  setTolList = M.keys
+
+  mapToList :: forall k v. M.Map k v -> List (Tuple k v)
+  mapToList = M.toUnfoldable
+
+  commitTV :: TRec -> ATVar -> AffSTM e Unit
+  commitTV rec' atvar = atvar # runATVar \(TVar _ _ timeRef valRef waitLocksRef) -> do
+    let val = unsafePartial $ fromJust $ M.lookup atvar (rec'.cache)
+    waitLocks <- liftEff do
+      _ <- Ref.writeRef timeRef (rec'.curTime + 1.00)
+      _ <- Ref.writeRef valRef (unsafeCoerce val)
+      Ref.readRef waitLocksRef
+    for_ waitLocks $ \waitLock -> AV.putVar waitLock unit
+    liftEff $ Ref.writeRef waitLocksRef Nil
+
+  go :: AffSTM e a
   go = do
     let
       trec :: TRec
-      trec = { curTime: 0.00, topTime: Nothing, writeSet: S.empty, curSet: M.empty, cache: M.empty }
-    Tuple maybeRet, rec' <- runStateT act trec
+      trec = { curTime: 0.00, topTime: Nothing, writeSet: M.empty, curSet: M.empty, cache: M.empty }
+    Tuple maybeRet rec' <- runStateT act trec
     case maybeRet of
-      Abort ->
+      Abort -> do
         -- | delay 5.00 milliseconds to allow js complete other task
         _ <- delay (wrap 5.00)
         go
 
       Retry -> do
-        waitLock <- AV.makeVar :: AV.AVar Unit
-        immediateAbort <- or <$> traverse (shouldAbort waitLock rec') (M.keys (cache rec'))
+        waitLock <- AV.makeVar :: (AffSTM e (AV.AVar Unit))
+        immediateAbort <- or <$> traverse (shouldAbort waitLock rec') (M.keys rec'.cache)
         if immediateAbort
           then delay (wrap 5.00)  *> go
           else AV.takeVar waitLock *> go
 
       Good ret -> do
-
+        _ <- for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+        times <- for (mapToList rec'.curSet) $ \(Tuple (ATVar (TVar _ _ timeRef _ _)) recTime) -> do
+          time <- liftEff $ Ref.readRef timeRef
+          pure $ if time /= recTime then Just time else Nothing
+        let
+          prunedTimes = catMaybes (rec'.topTime : times)
+          readSuccess = if null prunedTimes then true else Just (rec'.curTime + 1.00) < minimum prunedTimes
+        writeSuccess <- and <$>
+          (for (setTolList rec'.writeSet) $
+            \atvar@(ATVar (TVar _ _ timeRef _ _)) -> do
+              time <- liftEff $ Ref.readRef timeRef
+              pure $ Just time == M.lookup atvar rec'.curSet)
+        let success = readSuccess && writeSuccess
+        if success
+          then do
+            for_ (setTolList (rec'.writeSet)) (commitTV rec')
+            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+            pure ret
+          else do
+            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+            delay (wrap 5.00) *> go
 
 instance eqTVar :: Eq (TVar a) where
   eq (TVar a _ _ _ _) (TVar b _ _ _ _) = a == b
@@ -224,7 +276,7 @@ modifyCurTime f = ST.modify $ \rec -> rec { curTime = f rec.curTime }
 modifyTopTime :: forall e. (Maybe Timestamp -> Maybe Timestamp) -> StateT TRec (AffSTM e) Unit
 modifyTopTime f = ST.modify $ \rec-> rec { topTime = f rec.topTime }
 
-modifyWriteSet :: forall e. (S.Set ATVar -> S.Set ATVar) -> StateT TRec (AffSTM e) Unit
+modifyWriteSet :: forall e. (Set ATVar -> Set ATVar) -> StateT TRec (AffSTM e) Unit
 modifyWriteSet f = ST.modify $ \rec -> rec { writeSet = f rec.writeSet }
 
 modifyCurSet :: forall e. (M.Map ATVar Timestamp -> M.Map ATVar Timestamp) -> StateT TRec (AffSTM e) Unit
