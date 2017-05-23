@@ -188,7 +188,8 @@ atomically (STM act) = go
           else AV.takeVar waitLock *> go
 
       Good ret -> do
-        _ <- for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+        _ <- for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.takeVar lock
+
         times <- for (mapToList rec'.curSet) $ \(Tuple (ATVar (TVar _ _ timeRef _ _)) recTime) -> do
           time <- liftEff $ Ref.readRef timeRef
           pure $ if time /= recTime then Just time else Nothing

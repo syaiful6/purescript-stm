@@ -1,5 +1,6 @@
 module Control.Monad.STM
   ( module Control.Monad.STM.Internal
+  , check
   ) where
 
 import Prelude

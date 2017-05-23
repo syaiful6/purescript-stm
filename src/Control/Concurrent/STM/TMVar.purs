@@ -36,10 +36,10 @@ newEmptyTMVar:: forall a. STM (TMVar a)
 newEmptyTMVar = TMVar <$> newTVar Nothing
 
 newTMVarAff :: forall eff a. a -> AffSTM eff (TMVar a)
-newTMVarAff a = TMVar <$> newTVar (Just a)
+newTMVarAff a = TMVar <$> newTVarAff (Just a)
 
-newEmptyTMVarAff :: AffSTM eff (TMVar a)
-newEmptyTMVarAff = TMVar <$> newTVar Nothing
+newEmptyTMVarAff :: forall eff a. AffSTM eff (TMVar a)
+newEmptyTMVarAff = TMVar <$> newTVarAff Nothing
 
 takeTMVar :: forall a. TMVar a -> STM a
 takeTMVar (TMVar t) = readTVar t >>= case _ of
@@ -52,12 +52,12 @@ tryTakeTMVar (TMVar t) = readTVar t >>= case _ of
   Just a  -> writeTVar t Nothing $> Just a
 
 putTMVar :: forall a. TMVar a -> a -> STM Unit
-putTMVar (TMVar t) = readTVar t >>= case _ of
+putTMVar (TMVar t) a = readTVar t >>= case _ of
   Nothing -> writeTVar t (Just a) $> unit
   Just _  -> empty
 
 tryPutTMVar :: forall a. TMVar a -> a -> STM Boolean
-tryPutTMVar (TMVar t) = readTVar t >>= case _ of
+tryPutTMVar (TMVar t) a = readTVar t >>= case _ of
   Nothing -> writeTVar t (Just a) $> true
   Just _  -> pure false
 
@@ -70,9 +70,9 @@ tryReadTMVar :: forall a. TMVar a -> STM (Maybe a)
 tryReadTMVar (TMVar t) = readTVar t
 
 swapTMVar :: forall a. TMVar a -> a -> STM a
-swapTMVar (TMVar t) = readTVar t >>= case _ of
+swapTMVar (TMVar t) new = readTVar t >>= case _ of
   Nothing  -> empty
   Just old -> writeTVar t (Just new) $> old
 
 isEmptyTMVar :: forall a. TMVar a -> STM Boolean
-isEmptyTMVar (TMVar t) = readTVar >>= (pure <<< maybe true (const false))
+isEmptyTMVar (TMVar t) = readTVar t >>= (pure <<< maybe true (const false))
