@@ -1,4 +1,4 @@
-module Control.Concurrent.STM.TMVar
+module Control.Monad.STM.TMVar
   ( TMVar
   , newTMVar
   , newEmptyTMVar
@@ -16,10 +16,8 @@ module Control.Concurrent.STM.TMVar
 
 import Prelude
 
-import Control.Alt ((<|>))
-import Control.Plus (empty)
-import Control.Monad.STM (STM, AffSTM)
-import Control.Concurrent.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
+import Control.Monad.STM.Internal (STM, AffSTM, retry)
+import Control.Monad.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
 
 import Data.Maybe (Maybe(..), maybe)
 
@@ -43,7 +41,7 @@ newEmptyTMVarAff = TMVar <$> newTVarAff Nothing
 
 takeTMVar :: forall a. TMVar a -> STM a
 takeTMVar (TMVar t) = readTVar t >>= case _ of
-  Nothing -> empty
+  Nothing -> retry
   Just a  -> writeTVar t Nothing $> a
 
 tryTakeTMVar :: forall a. TMVar a -> STM (Maybe a)
@@ -54,7 +52,7 @@ tryTakeTMVar (TMVar t) = readTVar t >>= case _ of
 putTMVar :: forall a. TMVar a -> a -> STM Unit
 putTMVar (TMVar t) a = readTVar t >>= case _ of
   Nothing -> writeTVar t (Just a) $> unit
-  Just _  -> empty
+  Just _  -> retry
 
 tryPutTMVar :: forall a. TMVar a -> a -> STM Boolean
 tryPutTMVar (TMVar t) a = readTVar t >>= case _ of
@@ -63,7 +61,7 @@ tryPutTMVar (TMVar t) a = readTVar t >>= case _ of
 
 readTMVar :: forall a. TMVar a -> STM a
 readTMVar (TMVar t) = readTVar t >>= case _ of
-  Nothing -> empty
+  Nothing -> retry
   Just a  -> pure a
 
 tryReadTMVar :: forall a. TMVar a -> STM (Maybe a)
@@ -71,7 +69,7 @@ tryReadTMVar (TMVar t) = readTVar t
 
 swapTMVar :: forall a. TMVar a -> a -> STM a
 swapTMVar (TMVar t) new = readTVar t >>= case _ of
-  Nothing  -> empty
+  Nothing  -> retry
   Just old -> writeTVar t (Just new) $> old
 
 isEmptyTMVar :: forall a. TMVar a -> STM Boolean

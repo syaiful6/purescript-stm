@@ -11,6 +11,8 @@ module Control.Monad.STM.Internal
   , writeTVar
   , writeTVarAff
   , validateTVar
+  , check
+  , retry
   ) where
 
 import Prelude
@@ -27,7 +29,7 @@ import Control.MonadPlus (class MonadZero, class MonadPlus)
 import Control.Monad.State.Trans (StateT, runStateT)
 import Control.Monad.State.Class as ST
 import Control.Monad.Trans.Class (lift)
-import Control.Plus (class Plus)
+import Control.Plus (class Plus, empty)
 
 import Data.List (List(Nil), (:), null, catMaybes)
 import Data.Foldable (for_, or, and, minimum)
@@ -140,6 +142,16 @@ validateTVar tvar@(TVar _ _ timeRef _ _) = STM do
               _ <- modifyTopTime (Just <<< maybe newTime (min newTime))
               pure (Good unit)
             else pure Abort
+
+-- | Retry a transaction if condition doesn't hold
+check :: Boolean -> STM Unit
+check b = if b then pure unit else empty
+
+-- | Retry combinator just an alias to `empty`. Retry execution of the current
+-- | memory transaction because it has seen values in TVars which mean that it
+-- | should not continue (e.g. the TVars represent a shared buffer that is now empty).
+retry :: forall a. STM a
+retry = empty
 
 atomically :: forall e a. STM a -> AffSTM e a
 atomically (STM act) = go

@@ -1,4 +1,4 @@
-module Control.Concurrent.STM.TBQueue
+module Control.Monad.STM.TBQueue
   ( TBQueue
   , newTBQueue
   , newTBQueueAff
@@ -14,9 +14,8 @@ module Control.Concurrent.STM.TBQueue
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Plus (empty)
-import Control.Monad.STM (STM, AffSTM)
-import Control.Concurrent.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
+import Control.Monad.STM.Internal (STM, AffSTM, retry)
+import Control.Monad.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
 
 import Data.List (List(Nil), (:), reverse)
 import Data.Maybe (Maybe(..))
@@ -54,7 +53,7 @@ writeTBQueue (TBQueue rsize _read wsize write) a = do
     if (r /= 0)
        then do writeTVar rsize 0
                writeTVar wsize (r - 1)
-       else empty
+       else retry
   listend <- readTVar write
   writeTVar write (a:listend)
 
@@ -69,12 +68,12 @@ readTBQueue (TBQueue rsize read _wsize write) = do
     Nil        -> do
       ys <- readTVar write
       case ys of
-        Nil -> empty -- retry
+        Nil -> retry
         _   -> do
           let rys = reverse ys
           _ <- writeTVar write Nil
           case rys of
-            Nil       -> empty
+            Nil       -> retry -- this should not happen
             (z : zs)  -> writeTVar read zs $> z
 
 -- | A version of 'readTBQueue' which does not retry. Instead it
@@ -112,7 +111,7 @@ unGetTBQueue (TBQueue rsize read wsize _write) a = do
       w <- readTVar wsize
       if (w > 0)
         then writeTVar wsize (w - 1)
-        else empty
+        else retry
   xs <- readTVar read
   writeTVar read (a:xs)
 

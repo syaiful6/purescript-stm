@@ -9,7 +9,7 @@ import Control.Monad.Eff.Class (liftEff)
 import Control.Monad.Eff.Console (CONSOLE)
 import Control.Monad.Eff.Exception (EXCEPTION, error)
 import Control.Monad.Error.Class (throwError)
-import Control.Monad.STM.Internal (STMEff, AffSTM, TVar, STM, newTVar, writeTVar, readTVar, atomically)
+import Control.Monad.STM (STMEff, AffSTM, TVar, STM, newTVar, writeTVar, readTVar, atomically)
 import Control.Plus (empty)
 import Control.Monad.Rec.Class (forever)
 
@@ -52,8 +52,8 @@ operateGate :: forall eff. Gate -> AffSTM eff Unit
 operateGate (Gate n tv) = do
   _ <- atomically (writeTVar tv n)
   atomically do
-  	left <- readTVar tv
-  	check (left == 0)
+    left <- readTVar tv
+    check (left == 0)
 
 data Pair3 a b c = Pair3 a b c
 
@@ -92,12 +92,12 @@ choose choices = do
   where
   f :: (a -> AffSTM eff Unit) -> STM a -> STM (AffSTM eff Unit)
   f rhs guard = do
-  	v <- guard
-  	pure (rhs v)
+    v <- guard
+    pure (rhs v)
   actions :: Array (STM (AffSTM eff Unit))
   actions = do
-  	Tuple guard rhs <- choices
-  	pure (f rhs guard)
+    Tuple guard rhs <- choices
+    pure (f rhs guard)
 
 randomDelay :: forall eff. Aff eff Unit
 randomDelay = do
@@ -129,7 +129,7 @@ santa :: forall eff. Group -> Group -> Aff (Effects eff) Unit
 santa elf rein = do
   log "----------\n"
   choose
-  	[ Tuple (awaitGroup rein) (run "deliver toys"),
+    [ Tuple (awaitGroup rein) (run "deliver toys"),
       Tuple (awaitGroup elf)  (run "meet in my study")
     ]
   where
@@ -144,8 +144,8 @@ main = void $ launchAff do
   log "The Santa Claus problem.\n"
   elfg <- newGroup 3
   sequence_ do
-  	n <- 1..10
-  	pure $ spawn elfTask elfg n
+    n <- 1..10
+    pure $ spawn elfTask elfg n
   reing <- newGroup 9
   sequence_ do
     n <- 1..9

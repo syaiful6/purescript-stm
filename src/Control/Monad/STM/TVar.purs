@@ -1,8 +1,8 @@
-module Control.Concurrent.STM.TVar
-	( modifyTVar
+module Control.Monad.STM.TVar
+  ( modifyTVar
   , swapTVar
   , module Control.Monad.STM.Internal
-	) where
+  ) where
 
 import Prelude
 

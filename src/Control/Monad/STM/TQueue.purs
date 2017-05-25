@@ -1,4 +1,4 @@
-module Control.Concurrent.STM.TQueue
+module Control.Monad.STM.TQueue
   ( TQueue
   , newTQueue
   , newTQueueAff
@@ -14,9 +14,8 @@ module Control.Concurrent.STM.TQueue
 import Prelude
 
 import Control.Alt ((<|>))
-import Control.Plus (empty)
-import Control.Monad.STM (STM, AffSTM)
-import Control.Concurrent.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
+import Control.Monad.STM.Internal (STM, AffSTM, retry)
+import Control.Monad.STM.TVar (TVar, newTVar, newTVarAff, readTVar, writeTVar)
 
 import Data.List (List(Nil), (:), reverse)
 import Data.Maybe (Maybe(..))
@@ -54,9 +53,9 @@ readTQueue (TQueue read write) = do
     Nil        -> do
       ys <- readTVar write
       case ys of
-        Nil -> empty -- retry
+        Nil -> retry
         _   -> case reverse ys of
-          Nil      -> empty
+          Nil      -> retry
           (z : zs) -> writeTVar write Nil *> writeTVar read zs $> z
 
 -- | A version of 'readTQueue' which does not retry. Instead it

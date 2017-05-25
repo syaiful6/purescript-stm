@@ -1,16 +1,21 @@
 module Control.Monad.STM
   ( module Control.Monad.STM.Internal
-  , check
+
+  , module Control.Monad.STM.TBQueue
+  , module Control.Monad.STM.TQueue
+  , module Control.Monad.STM.TVar
+  , module Control.Monad.STM.TMVar
   ) where
 
-import Prelude
-import Control.Plus (empty)
+import Control.Monad.STM.Internal (STMEff, TVar, STM, AffSTM, atomically, validateTVar, check, retry)
 
-import Control.Monad.STM.Internal (STMEff, TVar, STM, atomically, AffSTM, validateTVar)
+import Control.Monad.STM.TVar (modifyTVar, swapTVar, newTVar, newTVarAff, readTVar, readTVarEff
+  , writeTVar, writeTVarAff)
+import Control.Monad.STM.TQueue (TQueue, newTQueue, newTQueueAff, readTQueue, tryReadTQueue
+  , peekTQueue, tryPeekTQueue, writeTQueue, unGetTQueue, isEmptyTQueue)
+import Control.Monad.STM.TBQueue (TBQueue, newTBQueue, newTBQueueAff, readTBQueue, tryReadTBQueue
+  , peekTBQueue, tryPeekTBQueue, writeTBQueue, unGetTBQueue, isEmptyTBQueue)
+import Control.Monad.STM.TMVar (TMVar, newTMVar, newEmptyTMVar, newTMVarAff, newEmptyTMVarAff
+  , takeTMVar, putTMVar, readTMVar, tryReadTMVar, swapTMVar, tryTakeTMVar, tryPutTMVar, isEmptyTMVar)
 
--- | Retry a transaction if condition doesn't hold
-check :: Boolean -> STM Unit
-check b = if b then pure unit else empty
-
--- `orElse` combinator is not defined because you can use <|>
--- `retry` combinator is not defined, instead use empty method defined Control.Plus
+-- `orElse` combinator is not defined because you can use <|> instead
