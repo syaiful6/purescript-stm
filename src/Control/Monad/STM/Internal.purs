@@ -74,6 +74,7 @@ type TRec =
 -- | The STM Monad.
 newtype STM a = STM (forall r. StateT TRec (Aff (STMEff r)) (Result a))
 
+-- | create a new ```TVar``` by give it initial value.
 newTVar :: forall a. a -> STM (TVar a)
 newTVar val = STM do
   tvar <- lift (newTVarAff val)
@@ -83,7 +84,7 @@ newTVar val = STM do
 newTVarAff :: forall eff a. a -> AffSTM eff (TVar a)
 newTVarAff a = TVar
   <$> liftEff _newTVarId
-  <*> AV.makeVar' unit
+  <*> AV.makeVar unit
   <*> liftEff (Ref.newRef 0.00)
   <*> liftEff (Ref.newRef a)
   <*> liftEff (Ref.newRef Nil)
@@ -177,7 +178,7 @@ atomically (STM act) = go
       _ <- Ref.writeRef timeRef (rec'.curTime + 1.00)
       _ <- Ref.writeRef valRef (unsafeCoerce val)
       Ref.readRef waitLocksRef
-    for_ waitLocks $ \waitLock -> AV.putVar waitLock unit
+    for_ waitLocks $ \waitLock -> AV.putVar unit waitLock
     liftEff $ Ref.writeRef waitLocksRef Nil
 
   go :: AffSTM e a
@@ -193,7 +194,7 @@ atomically (STM act) = go
         go
 
       Retry -> do
-        waitLock <- AV.makeVar :: (AffSTM e (AV.AVar Unit))
+        waitLock <- AV.makeEmptyVar :: (AffSTM e (AV.AVar Unit))
         immediateAbort <- or <$> traverse (shouldAbort waitLock rec') (M.keys rec'.cache)
         if immediateAbort
           then delay (wrap 5.00)  *> go
@@ -217,10 +218,10 @@ atomically (STM act) = go
         if success
           then do
             for_ (setTolList (rec'.writeSet)) (commitTV rec')
-            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar unit lock
             pure ret
           else do
-            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar lock unit
+            for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar unit lock
             delay (wrap 5.00) *> go
 
 instance eqTVar :: Eq (TVar a) where
@@ -298,10 +299,10 @@ modifyCurSet f = ST.modify $ \rec -> rec { curSet = f rec.curSet }
 modifyCache :: forall e. (M.Map ATVar Any -> M.Map ATVar Any) -> StateT TRec (AffSTM e) Unit
 modifyCache f = ST.modify $ \rec -> rec { cache = f rec.cache }
 
-withMVar :: forall e a b. AV.AVar a -> (a -> AV.AffAVar e b) -> AV.AffAVar e b
+withMVar :: forall e a b. AV.AVar a -> (a -> Aff (avar :: AV.AVAR | e) b) -> Aff (avar :: AV.AVAR | e) b
 withMVar v aff = do
   a <- AV.takeVar v
-  b <- aff a `catchError` \e -> AV.putVar v a *> throwError e
-  AV.putVar v a *> pure b
+  b <- aff a `catchError` \e -> AV.putVar a v *> throwError e
+  AV.putVar a v *> pure b
 
 foreign import _newTVarId :: forall eff. Eff eff Int
