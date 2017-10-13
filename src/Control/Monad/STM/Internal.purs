@@ -189,15 +189,15 @@ atomically (STM act) = go
     Tuple maybeRet rec' <- runStateT act trec
     case maybeRet of
       Abort -> do
-        -- | delay 5.00 milliseconds to allow js complete other task
-        _ <- delay (wrap 5.00)
+        -- | delay 15.00 milliseconds to allow js complete other task
+        _ <- delay (wrap 15.00)
         go
 
       Retry -> do
         waitLock <- AV.makeEmptyVar :: (AffSTM e (AV.AVar Unit))
         immediateAbort <- or <$> traverse (shouldAbort waitLock rec') (M.keys rec'.cache)
         if immediateAbort
-          then delay (wrap 5.00)  *> go
+          then delay (wrap 15.00)  *> go
           else AV.takeVar waitLock *> go
 
       Good ret -> do
@@ -222,7 +222,7 @@ atomically (STM act) = go
             pure ret
           else do
             for_ (M.keys rec'.cache) $ \(ATVar (TVar _ lock _ _ _)) -> AV.putVar unit lock
-            delay (wrap 5.00) *> go
+            delay (wrap 15.00) *> go
 
 instance eqTVar :: Eq (TVar a) where
   eq (TVar a _ _ _ _) (TVar b _ _ _ _) = a == b
